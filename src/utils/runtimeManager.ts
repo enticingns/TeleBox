@@ -147,9 +147,20 @@ async function createClient(): Promise<TelegramClient> {
       autoReconnect: true,
       deviceModel: readAppName(),
       proxy,
+      useIPV6: true,
     }
   );
   client.setLogLevel(logger.getGramJSLogLevel() as never);
+  // [IPV6-FIX] 强制走 Telegram 原生 IPv6 DC: 清掉 session 里残留的 IPv4 serverAddress
+  // (teleproto 在 connect() 时若 session 已存 serverAddress, 会用它覆盖 useIPV6 选择)
+  try {
+    const anyClient = client as any;
+    if (anyClient.session && typeof anyClient.session.serverAddress === "string" && !anyClient.session.serverAddress.includes(":")) {
+      console.log(`[IPV6-FIX] 清除残留 IPv4 serverAddress=${anyClient.session.serverAddress}, 改用 IPv6 DC 表`);
+      anyClient.session.serverAddress = "";
+    }
+    anyClient._useIPV6 = true;
+  } catch (e) { console.log(`[IPV6-FIX] err ${e}`); }
   return client;
 }
 
