@@ -179,9 +179,31 @@ abstract class Plugin {
 
 </div>
 
-## 🌐 纯 IPv6 / 自建部署说明
+## 🌐 双栈 / 自建部署说明
 
-> 本 fork 面向**纯 IPv6 机器**（无 NAT64、无 WARP）部署，并自带自建插件。
+> 本 fork 同时支持**纯 IPv6**、**双栈**与**纯 IPv4**机器部署，并自带自建插件。
+
+TeleBox 通过 Telegram 客户端是否走 **IPv6 DC** 来适配机器网络栈。处理逻辑
+（`src/utils/runtimeManager.ts`）优先级如下：
+
+1. **手动覆盖（环境变量）**：`TELEBOX_IPV6`
+   - `TELEBOX_IPV6=1` → 强制走 IPv6 DC
+   - `TELEBOX_IPV6=0` → 强制走 IPv4 DC
+   - 未设置 → 自动探测（见下）
+2. **自动探测**：本机存在非回环、非 ULA 的 global IPv6 地址（`2xxx:`/`3xxx:`）时走 IPv6，否则回落 IPv4。
+3. **兜底**：纯 IPv4 机器且未设 env 时，默认回落 IPv4，确保可正常连接 Telegram。
+
+#### 🚀 一键部署（复制对应一行）
+
+```bash
+# IPv6 / 双栈机器（推荐纯 IPv6 机器显式声明，避免探测误判）
+TELEBOX_IPV6=1 bash -c 'git clone https://github.com/enticingns/TeleBox.git ~/telebox && cd ~/telebox && NODE_OPTIONS=--dns-result-order=ipv6first npm install && npm start'
+
+# 纯 IPv4 机器（无 IPv6 连接）
+TELEBOX_IPV6=0 bash -c 'git clone https://github.com/enticingns/TeleBox.git ~/telebox && cd ~/telebox && npm install && npm start'
+```
+
+> 生产环境建议用 pm2：`TELEBOX_IPV6=1 pm2 start "npm start" --name telebox`
 
 ### ⚡ speedtest 轻量版（内置插件）
 
@@ -198,14 +220,14 @@ abstract class Plugin {
 | `.speedtest set <id>` | 设默认服务器 |
 | `.speedtest best` | 推荐服务器 |
 
-> 测速通过 `--interface eth0` 走机器**原生 IPv6** 出口，确保带宽测量准确。
+> 测速通过 `--interface eth0` 走机器**原生出口** IP，确保带宽测量准确。
 
-### 🛰️ IPv6 DC 强制直连（已修复）
+### 🛰️ IPv6 DC 适配（已修复）
 
-`src/utils/runtimeManager.ts` 的 `createClient()` 中已强制 `useIPV6: true`，
-并在连接前清除 session 中残留的 IPv4 `serverAddress`（teleproto 会优先用
-session 内 serverAddress 覆盖 `useIPV6` 选择），确保纯 IPv6 机器稳定连接
-Telegram **原生 IPv6 DC**，不再因回退 IPv4 而超时。
+`src/utils/runtimeManager.ts` 的 `createClient()` 中根据 `resolveIPv6Mode()` 设置
+`useIPV6`，并在连接前清除 session 中残留的 IPv4 `serverAddress`（teleproto 会优先用
+session 内 serverAddress 覆盖 `useIPV6` 选择），确保纯 IPv6 / 双栈机器稳定连接
+Telegram **原生 IPv6 DC**，不再因回退 IPv4 而超时；纯 IPv4 机器则回落 IPv4 DC。
 
 ## 🛠️ 技术栈
 

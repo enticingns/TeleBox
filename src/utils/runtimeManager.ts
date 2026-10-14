@@ -4,6 +4,7 @@ import { StringSession } from "teleproto/sessions";
 import { getApiConfig } from "./apiConfig";
 import { readAppName } from "./teleboxInfoHelper";
 import { logger } from "./logger";
+import os from "os";
 import { initializeClientSession } from "./loginManager";
 
 // ── Fix teleproto main-DC media upload deadlock (upstream #24 still open) ──
@@ -132,6 +133,30 @@ async function createClient(): Promise<TelegramClient> {
   // Always build from the CURRENT config.json session, never the process-start
   // cached value: after a DC migration the runtime client holds keys that were
   // never persisted, and rebuilding from the stale string loses the session.
+
+// 解析 Telegram 客户端是否走 IPv6 DC。
+// 优先级：环境变量 TELEBOX_IPV6 (1=强制IPv6 / 0=强制IPv4) > 自动探测 > 默认回落IPv4
+// 自动探测：本机存在非回环、非 ULA(fc/fd)的 global IPv6(2xxx/3xxx)地址则走 IPv6。
+function resolveIPv6Mode(): boolean {
+  const env = process.env.TELEBOX_IPV6;
+  if (env === "1") { console.log("[IPV6-MODE] TELEBOX_IPV6=1 → 强制 IPv6"); return true; }
+  if (env === "0") { console.log("[IPV6-MODE] TELEBOX_IPV6=0 → 强制 IPv4"); return false; }
+  try {
+    const hasGlobalV6 = os.networkInterfaces()
+      ? Object.values(os.networkInterfaces())
+          .flat()
+          .filter((n): n is os.NetworkInterfaceInfo => !!n && !n.internal)
+          .some((n) => n.family === "IPv6" && !n.address.startsWith("fe80") &&
+                        !n.address.startsWith("fc") && !n.address.startsWith("fd"))
+      : false;
+    console.log(`[IPV6-MODE] 自动探测 global IPv6=${hasGlobalV6} → ${hasGlobalV6 ? "IPv6" : "IPv4"}`);
+    return hasGlobalV6;
+  } catch {
+    console.log("[IPV6-MODE] 探测失败，默认回落 IPv4");
+    return false;
+  }
+}
+
   const currentSession = readFreshConfigSession();
   if (currentSession && currentSession !== api.session) {
     console.log("[RUNTIME] config.json session 已更新，使用最新 session 重建客户端");
@@ -147,19 +172,19 @@ async function createClient(): Promise<TelegramClient> {
       autoReconnect: true,
       deviceModel: readAppName(),
       proxy,
-      useIPV6: true,
+      useIPV6: resolveIPv6Mode(),
     }
   );
   client.setLogLevel(logger.getGramJSLogLevel() as never);
-  // [IPV6-FIX] 强制走 Telegram 原生 IPv6 DC: 清掉 session 里残留的 IPv4 serverAddress
+  // [IPV6-FIX] 根据解析出的模式强制 useIPV6：清掉 session 里残留的 IPv4 serverAddress
   // (teleproto 在 connect() 时若 session 已存 serverAddress, 会用它覆盖 useIPV6 选择)
   try {
     const anyClient = client as any;
     if (anyClient.session && typeof anyClient.session.serverAddress === "string" && !anyClient.session.serverAddress.includes(":")) {
-      console.log(`[IPV6-FIX] 清除残留 IPv4 serverAddress=${anyClient.session.serverAddress}, 改用 IPv6 DC 表`);
+      console.log(`[IPV6-FIX] 清除残留 IPv4 serverAddress=${anyClient.session.serverAddress}, 改用 IPv${resolveIPv6Mode() ? "6" : "4"} DC`);
       anyClient.session.serverAddress = "";
     }
-    anyClient._useIPV6 = true;
+    anyClient._useIPV6 = resolveIPv6Mode();
   } catch (e) { console.log(`[IPV6-FIX] err ${e}`); }
   return client;
 }
