@@ -178,7 +178,7 @@ async function setPlugins(basePath: string) {
   for await (const file of files) {
     const pluginPath = path.resolve(basePath, file);
     const mod = dynamicRequireWithDeps(pluginPath);
-    if (!mod) continue;
+    if (!mod) { console.warn(`[pluginManager] require 返回 null，跳过插件: ${file}`); continue; }
     const plugin = mod.default;
 
     if (isValidPlugin(plugin)) {

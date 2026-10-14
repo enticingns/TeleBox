@@ -8,8 +8,7 @@
 config.json
 assets/*
 !assets/.gitkeep
-plugins/*
-!plugins/.gitkeep
+!plugins/
 temp/*
 !temp/.gitkeep
 node_modules/*

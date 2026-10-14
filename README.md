@@ -179,6 +179,34 @@ abstract class Plugin {
 
 </div>
 
+## 🌐 纯 IPv6 / 自建部署说明
+
+> 本 fork 面向**纯 IPv6 机器**（无 NAT64、无 WARP）部署，并自带自建插件。
+
+### ⚡ speedtest 轻量版（内置插件）
+
+官方 `speedtest` 插件在运行时从 `install.speedtest.net` 下载 Ookla CLI 二进制，
+在纯 IPv6 网络下会因下载超时 / node-gyp 拉头文件失败而**原生崩溃**。
+本仓库 `plugins/speedtest.ts` 为**纯 Node + curl 实现的轻量版**，无外部二进制依赖：
+
+| 命令 | 作用 |
+|------|------|
+| `.speedtest` | 多源并发测速（图卡 / 文本自动回退） |
+| `.speedtest diag` | 网络诊断 |
+| `.speedtest check` | 连通性检查 |
+| `.speedtest list` | 服务器列表 |
+| `.speedtest set <id>` | 设默认服务器 |
+| `.speedtest best` | 推荐服务器 |
+
+> 测速通过 `--interface eth0` 走机器**原生 IPv6** 出口，确保带宽测量准确。
+
+### 🛰️ IPv6 DC 强制直连（已修复）
+
+`src/utils/runtimeManager.ts` 的 `createClient()` 中已强制 `useIPV6: true`，
+并在连接前清除 session 中残留的 IPv4 `serverAddress`（teleproto 会优先用
+session 内 serverAddress 覆盖 `useIPV6` 选择），确保纯 IPv6 机器稳定连接
+Telegram **原生 IPv6 DC**，不再因回退 IPv4 而超时。
+
 ## 🛠️ 技术栈
 
 | 领域 | 选型 | 版本 |
@@ -199,8 +227,14 @@ abstract class Plugin {
 </div>
 
 ```bash
-git clone https://github.com/TeleBoxOrg/TeleBox.git ~/telebox
-cd ~/telebox && npm install && npm start
+git clone https://github.com/enticingns/TeleBox.git ~/telebox
+cd ~/telebox
+
+# ⚠️ 纯 IPv6 机器必加：npm 强制 IPv6 优先解析，否则 install 会因连 IPv4 超时失败
+export NODE_OPTIONS=--dns-result-order=ipv6first
+npm install
+
+npm start   # 内部用 tsx 即时编译，无需额外 build
 # 生产环境建议：pm2 start "npm start" --name telebox
 ```
 
